@@ -1951,22 +1951,27 @@ __webpack_require__.r(__webpack_exports__);
 //
 //
 //
+//
+//
+//
 
 
 
 /* harmony default export */ __webpack_exports__["default"] = ({
   data: function data() {
     return {
+      status: null,
       currentUserStream: null,
       otherUserStream: null,
       channel: null,
       peers: {},
       user: null,
       users: [],
-      allowed: false,
       incomingCall: false,
-      callHolder: {},
-      mediaHandler: null
+      callSignal: {},
+      mediaHandler: null,
+      isBusy: false,
+      currentPeer: null
     };
   },
   mounted: function mounted() {
@@ -1996,7 +2001,9 @@ __webpack_require__.r(__webpack_exports__);
         console.log("Peer...", peer, signal);
 
         if (peer === undefined) {
-          peer = _this.setPeer(signal.userId, false);
+          _this.callSignal = signal;
+          _this.incomingCall = true;
+          return;
         } // console.log("Sub", signal);
 
 
@@ -2012,28 +2019,25 @@ __webpack_require__.r(__webpack_exports__);
         stream: this.currentUserStream,
         trickle: false
       });
+      this.currentPeer = peer;
       peer.on('signal', function (data) {
-        console.log("On Signle...", userId, initiator, data); // someone is trying to call us
-
-        if (!initiator) {
-          if (_this2.incomingCall == true) {
-            // console.log("Already in call");
-            return;
-          }
-
-          _this2.callHolder = {
-            data: data,
-            userId: userId
-          };
-          _this2.incomingCall = true;
-          return;
-        }
+        console.log("On Signle...", userId, initiator, data);
 
         _this2.channel.trigger("client-signal-".concat(userId), {
           type: 'signal',
           userId: _this2.user.id,
           data: data
         });
+      });
+      peer.on('data', function (data) {
+        console.log("On Data", data);
+
+        _this2.currentUserStream.getVideoTracks()[0].stop();
+
+        _this2.currentUserStream = null;
+        peer.destroy();
+        _this2.status = 'call Ended';
+        _this2.isBusy = false;
       });
       peer.on('connect', function () {
         console.log("On Connnect...", userId, initiator);
@@ -2050,6 +2054,12 @@ __webpack_require__.r(__webpack_exports__);
           peer.destroy();
         }
 
+        if (_this2.currentUserStream) {
+          _this2.currentUserStream.getVideoTracks()[0].stop();
+        }
+
+        _this2.currentUserStream = null;
+        _this2.otherUserStream = null;
         _this2.peers[userId] = undefined;
       });
       return peer;
@@ -2057,13 +2067,14 @@ __webpack_require__.r(__webpack_exports__);
     onCall: function onCall(userId) {
       var _this3 = this;
 
-      if (this.mediaHandler === undefined) {
+      if (this.mediaHandler === undefined || this.isBusy) {
         throw new Error("Something went wrong");
       }
 
       this.mediaHandler.getPremission().then(function (stream) {
         _this3.currentUserStream = stream;
         _this3.peers[userId] = _this3.setPeer(userId);
+        _this3.isBusy = true;
       })["catch"](function () {
         console.log("please allow the app to use your camera and microphone, and refresh");
       });
@@ -2079,21 +2090,51 @@ __webpack_require__.r(__webpack_exports__);
     onIncomingCall: function onIncomingCall() {
       var _this5 = this;
 
-      if (this.callHolder.userId === undefined) {
+      if (this.callSignal.userId === undefined || this.isBusy) {
         throw new Error("Something went wrong");
       }
 
       this.incomingCall = false;
       this.mediaHandler.getPremission().then(function (stream) {
         _this5.currentUserStream = stream;
+
+        var peer = _this5.setPeer(_this5.callSignal.userId, false);
+
+        _this5.peers[_this5.callSignal.userId] = peer;
+        peer.signal(_this5.callSignal.data);
+        _this5.isBusy = true;
       })["catch"](function () {
         console.log("please allow the app to use your camera and microphone, and refresh");
       });
-      this.channel.trigger("client-signal-".concat(this.callHolder.userId), {
-        type: 'signal',
-        userId: this.user.id,
-        data: this.callHolder.data
+    },
+    onRejectCall: function onRejectCall() {
+      var _this6 = this;
+
+      var peer = new simple_peer__WEBPACK_IMPORTED_MODULE_2___default.a({
+        initiator: false,
+        trickle: false
       });
+      console.log("On rejected");
+      peer.on('connect', function () {
+        console.log("On Connected", peer);
+        peer.send('rejected');
+        peer.destroy();
+        _this6.incomingCall = false;
+      });
+      peer.on('signal', function (data) {
+        console.log("On Singal");
+
+        _this6.channel.trigger("client-signal-".concat(_this6.callSignal.userId), {
+          type: 'signal',
+          userId: _this6.user.id,
+          data: data
+        });
+      });
+      peer.signal(this.callSignal.data);
+    },
+    onEndCall: function onEndCall() {
+      this.currentPeer.send('rejected');
+      this.currentPeer.destroy();
     }
   }
 });
@@ -8609,7 +8650,7 @@ exports = module.exports = __webpack_require__(/*! ../../../node_modules/css-loa
 
 
 // module
-exports.push([module.i, ".video-container[data-v-332fccf4] {\n  height: 350px;\n  width: 100%;\n}\n.video-container .mine[data-v-332fccf4] {\n  height: 110px;\n  position: absolute;\n  bottom: 10px;\n  right: 10px;\n  border: 4px solid #eee;\n  border-radius: 10px;\n}\n.video-container .theirs[data-v-332fccf4] {\n  width: 100%;\n  height: 100%;\n}\n.video-container .call-box[data-v-332fccf4] {\n  width: 100%;\n  height: 100%;\n  background: #d9d4dc;\n}\n.video-container .call-box .icon[data-v-332fccf4] {\n  margin-top: auto;\n  color: white;\n  font-size: 36px;\n  border-radius: 30px;\n  padding: 0.6rem;\n  margin-top: auto;\n  margin-bottom: 1rem;\n}\n.video-container .call-box .icon.icon-accept[data-v-332fccf4] {\n  background: green;\n  margin-left: auto;\n  margin-right: 0.5rem;\n}\n.video-container .call-box .icon.icon-reject[data-v-332fccf4] {\n  background: #f50e0e;\n  margin-right: auto;\n  margin-left: 0.5rem;\n}", ""]);
+exports.push([module.i, ".video-container[data-v-332fccf4] {\n  height: 350px;\n  width: 100%;\n}\n.video-container .mine[data-v-332fccf4] {\n  height: 110px;\n  position: absolute;\n  bottom: 10px;\n  right: 10px;\n  border: 4px solid #eee;\n  border-radius: 10px;\n}\n.video-container .theirs[data-v-332fccf4] {\n  width: 100%;\n  height: 100%;\n}\n.video-container .call-box[data-v-332fccf4] {\n  width: 100%;\n  height: 100%;\n  background: #d9d4dc;\n}\n.video-container .call-box .icon[data-v-332fccf4] {\n  margin-top: auto;\n  color: white;\n  font-size: 36px;\n  border-radius: 30px;\n  padding: 0.6rem;\n  margin-top: auto;\n  margin-bottom: 1rem;\n}\n.video-container .call-box .icon.icon-accept[data-v-332fccf4] {\n  background: green;\n  margin-left: auto;\n  margin-right: 0.5rem;\n}\n.video-container .call-box .icon.icon-reject[data-v-332fccf4] {\n  background: #f50e0e;\n  margin-right: auto;\n  margin-left: 0.5rem;\n}\n.video-container .icon-end[data-v-332fccf4] {\n  position: absolute;\n  bottom: 38px;\n  left: 243px;\n  color: white;\n  background: #f50e0e;\n  padding: 1rem;\n  border-radius: 21px;\n}", ""]);
 
 // exports
 
@@ -52824,6 +52865,12 @@ var render = function() {
           ]),
           _vm._v(" "),
           _c("div", { staticClass: "card-body" }, [
+            _vm.status
+              ? _c("h4", { staticClass: "status-header" }, [
+                  _vm._v(_vm._s(_vm.status))
+                ])
+              : _vm._e(),
+            _vm._v(" "),
             _c("div", { staticClass: "video-container" }, [
               _vm.incomingCall
                 ? _c("div", { staticClass: "call-box d-flex flex-row" }, [
@@ -52838,7 +52885,10 @@ var render = function() {
                     _vm._v(" "),
                     _c(
                       "span",
-                      { staticClass: "material-icons icon icon-reject" },
+                      {
+                        staticClass: "material-icons icon icon-reject",
+                        on: { click: _vm.onRejectCall }
+                      },
                       [_vm._v("clear")]
                     )
                   ])
@@ -52858,6 +52908,17 @@ var render = function() {
                     attrs: { autoplay: "" },
                     domProps: { srcObject: _vm.otherUserStream }
                   })
+                : _vm._e(),
+              _vm._v(" "),
+              _vm.otherUserStream
+                ? _c(
+                    "span",
+                    {
+                      staticClass: "material-icons icon icon-end",
+                      on: { click: _vm.onEndCall }
+                    },
+                    [_vm._v("call_end")]
+                  )
                 : _vm._e()
             ])
           ])

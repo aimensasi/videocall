@@ -6,13 +6,16 @@
           <div class="card-header">Video Live Chat</div>
 
           <div class="card-body">
+              <h4 class="status-header" v-if="status">{{ status }}</h4>
               <div class="video-container">
                 <div class="call-box d-flex flex-row" v-if="incomingCall">
                   <span class="material-icons icon icon-accept" @click="onIncomingCall">done</span>
-                  <span class="material-icons icon icon-reject">clear</span>
+                  <span class="material-icons icon icon-reject" @click="onRejectCall">clear</span>
                 </div>
                 <video class="mine" v-if="currentUserStream" :srcObject.prop="currentUserStream" autoplay></video>
                 <video class="theirs" v-if="otherUserStream" :srcObject.prop="otherUserStream" autoplay></video>
+
+                <span class="material-icons icon icon-end" v-if="otherUserStream" @click="onEndCall">call_end</span>
               </div>
           </div>
         </div>
@@ -44,16 +47,18 @@
   export default {
     data: function(){
       return {
+        status: null,
         currentUserStream: null, 
         otherUserStream: null, 
         channel: null,
         peers: {},
         user: null,
         users: [],
-        allowed: false,
         incomingCall: false,
-        callHolder: {},
+        callSignal: {},
         mediaHandler: null,
+        isBusy: false,
+        currentPeer: null,
       }
     },
     mounted() {
@@ -83,7 +88,9 @@
           console.log("Peer...", peer, signal);
 
           if(peer === undefined){
-            peer = this.setPeer(signal.userId, false);
+            this.callSignal = signal;
+            this.incomingCall = true;
+            return;
           }
 
           // console.log("Sub", signal);
@@ -97,24 +104,25 @@
           trickle: false,
         });
 
+        this.currentPeer = peer;
+
         peer.on('signal', (data) => {
           console.log("On Signle...", userId, initiator, data);
-          // someone is trying to call us
-          if(!initiator){
-            if(this.incomingCall == true){
-              // console.log("Already in call");
-              return;
-            }
-            this.callHolder = { data, userId };
-            this.incomingCall = true;
-            return;
-          }
           
           this.channel.trigger(`client-signal-${userId}`, {
             type: 'signal',
             userId: this.user.id,
             data: data
           });
+        });
+
+        peer.on('data', (data) => {
+          console.log("On Data", data);
+          this.currentUserStream.getVideoTracks()[0].stop();
+          this.currentUserStream = null;
+          peer.destroy();
+          this.status = 'call Ended';
+          this.isBusy = false;
         });
 
 
@@ -134,13 +142,20 @@
               peer.destroy();
           }
 
+          if(this.currentUserStream){
+            this.currentUserStream.getVideoTracks()[0].stop();
+          }
+          
+          this.currentUserStream = null;
+          this.otherUserStream = null;
+
           this.peers[userId] = undefined;
         });
 
         return peer;
       },
       onCall: function(userId){
-        if(this.mediaHandler === undefined){
+        if(this.mediaHandler === undefined || this.isBusy){
           throw new Error("Something went wrong");
         }
 
@@ -148,6 +163,7 @@
         .then((stream) => {
           this.currentUserStream = stream;
           this.peers[userId] = this.setPeer(userId);
+          this.isBusy = true;
         }).catch(() => {
           console.log("please allow the app to use your camera and microphone, and refresh");
         });
@@ -159,7 +175,7 @@
         });
       },
       onIncomingCall: function(){
-        if(this.callHolder.userId === undefined){
+        if(this.callSignal.userId === undefined || this.isBusy){
           throw new Error("Something went wrong");
         }
 
@@ -168,16 +184,42 @@
         this.mediaHandler.getPremission()
         .then((stream) => {
           this.currentUserStream = stream;
+
+          let peer = this.setPeer(this.callSignal.userId, false);
+          this.peers[this.callSignal.userId] = peer;
+          peer.signal(this.callSignal.data);
+          this.isBusy = true;
         }).catch(() => {
           console.log("please allow the app to use your camera and microphone, and refresh");
         });
-
-        this.channel.trigger(`client-signal-${this.callHolder.userId}`, {
-          type: 'signal',
-          userId: this.user.id,
-          data: this.callHolder.data
+      },
+      onRejectCall: function(){
+        let peer = new Peer({
+          initiator: false,
+          trickle: false,
         });
-        
+        console.log("On rejected");
+        peer.on('connect', () => {
+          console.log("On Connected", peer);
+          peer.send('rejected');
+          peer.destroy();
+          this.incomingCall = false;
+        });
+
+        peer.on('signal', (data) => {
+          console.log("On Singal");
+          this.channel.trigger(`client-signal-${this.callSignal.userId}`, {
+            type: 'signal',
+            userId: this.user.id,
+            data: data
+          });
+        });
+
+        peer.signal(this.callSignal.data);
+      },
+      onEndCall: function(){
+        this.currentPeer.send('rejected');
+        this.currentPeer.destroy();
       }
     }
   }
@@ -222,6 +264,15 @@
           margin-left: 0.5rem;
         }
       }
+    }
+    .icon-end{
+      position: absolute;
+      bottom: 38px;
+      left: 243px;
+      color: white;
+      background: #f50e0e;
+      padding: 1rem;
+      border-radius: 21px;
     }
   }
 </style>
