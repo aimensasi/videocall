@@ -65156,7 +65156,7 @@ var MediaHandler = /*#__PURE__*/function () {
       return new Promise(function (resolve, reject) {
         navigator.mediaDevices.getUserMedia({
           video: true,
-          audio: false
+          audio: true
         }).then(function (stream) {
           resolve(stream);
         })["catch"](function (error) {
